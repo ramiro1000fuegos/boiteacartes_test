@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr"> 
+<html lang="fr">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
@@ -192,11 +192,11 @@
   #btn-main{
     width:100%;
     max-width:420px;
-    height:clamp(85px, 10dvh, 120px);
-    border-radius:16px;
+    height:clamp(85px, 11dvh, 120px);
+    border-radius:18px;
     font-family:var(--font-display);
     font-weight:700;
-    font-size:19px;
+    font-size:clamp(18px, 2.6dvh, 23px);
   }
   #btn-main.rv-mode-reveal{ background:var(--spot); color:#1B140A; border:none; }
   #btn-main.rv-mode-hide{ background:transparent; color:var(--text); border:1.5px solid var(--line); }
@@ -317,7 +317,7 @@
       </div>
     </div>
 
-    <div class="rv-stage-actionbar" style="gap:10px">
+    <div class="rv-stage-actionbar">
       <button class="rv-btn rv-mode-reveal" id="btn-main">Révéler</button>
       <div class="rv-dots" id="deck-dots"></div>
       <span class="rv-count-text" id="deck-count-text"></span>
@@ -364,7 +364,6 @@
   ];
 
   var STORAGE_SOURCES = "revele.sources";
-  var STORAGE_VIEWS = "revele.viewCounts";
   var CACHE_PREFIX = "revele.cache.";
 
   var SAMPLE_ROWS = [
@@ -377,33 +376,6 @@
     {jeu:"Exemple : Esquissé", categorie:"Objets", texte:"Une théière qui joue de la trompette."},
     {jeu:"Exemple : Esquissé", categorie:"Objets", texte:"Un parapluie transformé en fusée."}
   ];
-
-  // ---- cyrb53 (hash rapide non cryptographique) ----------------------------
-  function cyrb53(str, seed){
-    seed = seed || 0;
-    var h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed;
-    for (var i = 0, ch; i < str.length; i++){
-      ch = str.charCodeAt(i);
-      h1 = Math.imul(h1 ^ ch, 2654435761);
-      h2 = Math.imul(h2 ^ ch, 1597334677);
-    }
-    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507);
-    h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
-    h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-    var out = 4294967296 * (2097151 & h2) + (h1 >>> 0);
-    return out.toString(36);
-  }
-  function cardKey(row){
-    return cyrb53((row.jeu||"") + "|" + (row.categorie||"") + "|" + (row.texte||""));
-  }
-
-  // ---- Poids de priorité par rang (décroissance géométrique) -----------------
-  // rang 0 (le moins vu) a le plus de poids ; plus le rang grimpe, moins la
-  // carte est prioritaire. Décroissance douce : une grosse "vague" de cartes
-  // neuves (nouvelle catégorie, nouvelle source) reste favorisée sans jamais
-  // monopoliser tout le début de partie (vérifié par simulation).
-  function rankWeight(rank){ return Math.pow(2, -rank); }
 
   // ---- DOMPurify config ---------------------------------------------------
   DOMPurify.addHook("uponSanitizeAttribute", function(node, data){
@@ -451,20 +423,6 @@
     return order.map(function(k){ return {key:k, label:map[k]}; });
   }
 
-  // ---- View counts (localStorage, global per card key) ----------------------
-  function getViewCounts(){
-    try { return JSON.parse(localStorage.getItem(STORAGE_VIEWS) || "{}"); }
-    catch(e){ return {}; }
-  }
-  function saveViewCounts(obj){
-    try { localStorage.setItem(STORAGE_VIEWS, JSON.stringify(obj)); } catch(e){}
-  }
-  function incrementViewCount(key){
-    var counts = getViewCounts();
-    counts[key] = (counts[key] || 0) + 1;
-    saveViewCounts(counts);
-  }
-
   // ---- Sources registry (localStorage) -----------------------------------
   function getSources(){
     try { return JSON.parse(localStorage.getItem(STORAGE_SOURCES) || "[]"); }
@@ -489,9 +447,7 @@
       var categorie = normalized["categorie"] || normalized["catégorie"] || "";
       var texte = normalized["texte"] || "";
       if (jeu && texte){
-        var r = {jeu:jeu, categorie: categorie || "Général", texte:texte};
-        r.key = cardKey(r);
-        out.push(r);
+        out.push({jeu:jeu, categorie: categorie || "Général", texte:texte});
       }
     });
     return out;
@@ -510,13 +466,13 @@
 
   function buildAggregateRows(){
     var sources = getSources();
-    if (sources.length === 0) return SAMPLE_ROWS.slice().map(function(r){ r.key = cardKey(r); return r; });
+    if (sources.length === 0) return SAMPLE_ROWS.slice();
     var merged = [];
     sources.forEach(function(s){
       var cached = getCache(s.url);
       if (cached && cached.rows) merged = merged.concat(cached.rows);
     });
-    return merged.length ? merged : SAMPLE_ROWS.slice().map(function(r){ r.key = cardKey(r); return r; });
+    return merged.length ? merged : SAMPLE_ROWS.slice();
   }
 
   function refreshAllSourcesInBackground(){
@@ -604,46 +560,28 @@
   $("btn-cat-none").addEventListener("click", function(){ selectedCategoryKeys = new Set(); renderCategoryList(); });
   $("btn-cat-play").addEventListener("click", startDeck);
 
-  // ---- Deck construction : tirage pondéré sans remise (Efraimidis-Spirakis) --
+  // ---- Deck construction : mélange aléatoire uniforme, sans historique -------
+  // Pas de pondération par nombre de vues : une carte déjà tirée aujourd'hui
+  // n'a pas plus ni moins de chances de ressortir demain que les autres.
+  // Simple, prévisible, et sans effet de bord quand le contenu évolue
+  // (nouvelle carte, nouvelle catégorie, nouvelle source).
   function buildPool(){
     return allRows.filter(function(r){
       return normalizeKey(r.jeu) === currentGameKey && selectedCategoryKeys.has(normalizeKey(r.categorie));
     });
   }
 
-  function buildWeightedDeckOrder(pool){
-    // 1) compteurs de vues bruts, pour cette sélection précise
-    var counts = getViewCounts();
-    var rawCounts = pool.map(function(item){ return counts[item.key] || 0; });
-
-    // 2) compression en rangs denses (0,1,2… quel que soit l'écart brut de vues)
-    var distinct = Array.from(new Set(rawCounts)).sort(function(a,b){ return a-b; });
-    var rankOf = {};
-    distinct.forEach(function(v, i){ rankOf[v] = i; });
-
-    // 3) tirage pondéré sans remise : chaque carte reçoit une clé u^(1/poids),
-    // on trie par clé décroissante. Équivalent à piocher au hasard les cartes
-    // une par une avec une probabilité proportionnelle au poids, sans jamais
-    // remettre une carte déjà tirée. Contrairement à un tri de bruits i.i.d.,
-    // ce mécanisme ne s'aggrave pas quand le groupe prioritaire est grand
-    // (vérifié par simulation) : les cartes à 0 vue restent favorisées sans
-    // jamais monopoliser le début de partie, que ce soit une seule carte
-    // neuve ou une catégorie entière tout juste ajoutée.
-    // Cas dégénéré (toutes les cartes au même rang) : les poids sont égaux,
-    // la clé redevient un simple nombre aléatoire uniforme → ordre purement
-    // aléatoire, sans avoir besoin d'un mélange préalable séparé.
-    var scored = pool.map(function(item, i){
-      var rank = rankOf[rawCounts[i]];
-      var weight = rankWeight(rank);
-      var key = Math.pow(Math.random(), 1 / weight);
-      return { item: item, key: key };
-    });
-    scored.sort(function(a, b){ return b.key - a.key; });
-    return scored.map(function(s){ return s.item; });
+  function shuffle(pool){
+    var a = pool.slice();
+    for (var i = a.length - 1; i > 0; i--){
+      var j = Math.floor(Math.random() * (i + 1));
+      var tmp = a[i]; a[i] = a[j]; a[j] = tmp;
+    }
+    return a;
   }
 
   function startDeck(){
-    deck = buildWeightedDeckOrder(buildPool());
+    deck = shuffle(buildPool());
     deckTotal = deck.length;
     deckPos = 0;
     $("stage-game-name").textContent = currentGameLabel;
@@ -693,7 +631,6 @@
     }
     var item = deck[deckPos];
     deckPos++;
-    incrementViewCount(item.key);
     $("card-category").textContent = item.categorie;
     $("card-text").innerHTML = sanitizeCardText(item.texte);
     $("stage-idle").style.display = "none";
@@ -719,7 +656,7 @@
     // relit l'agrégat ici seulement : une mise à jour arrivée en arrière-plan
     // ne s'applique jamais en pleine partie, uniquement à ce moment précis
     allRows = buildAggregateRows();
-    deck = buildWeightedDeckOrder(buildPool());
+    deck = shuffle(buildPool());
     deckPos = 0;
     $("stage-empty").classList.remove("rv-visible");
     $("stage-idle").style.display = "flex";
