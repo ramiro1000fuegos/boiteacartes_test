@@ -80,6 +80,7 @@
   .rv-btn{
     border:none; border-radius:12px; padding:15px 22px;
     font-size:16px; font-weight:600; font-family:var(--font-ui);
+    height:clamp(85px, 11dvh, 120px);    
   }
   .rv-btn-primary{ background:var(--spot); color:#1B140A; }
   .rv-btn-primary:active{transform:scale(.98);}
@@ -276,8 +277,8 @@
         <div class="rv-chip-row" id="category-list"></div>
       </div>
       <div class="rv-footer-actions">
-        <p class="rv-count-note" id="cat-count-note"></p>
         <button class="rv-btn rv-btn-primary" id="btn-cat-play">Jouer</button>
+        <p class="rv-count-note" id="cat-count-note"></p>
       </div>
     </div>
   </section>
