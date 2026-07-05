@@ -192,7 +192,7 @@
   #btn-main{
     width:100%;
     max-width:420px;
-    height:60px;
+    height:clamp(64px, 9dvh, 84px);
     border-radius:16px;
     font-family:var(--font-display);
     font-weight:700;
@@ -318,9 +318,9 @@
     </div>
 
     <div class="rv-stage-actionbar">
+      <button class="rv-btn rv-mode-reveal" id="btn-main">Révéler</button>
       <div class="rv-dots" id="deck-dots"></div>
       <span class="rv-count-text" id="deck-count-text"></span>
-      <button class="rv-btn rv-mode-reveal" id="btn-main">Révéler</button>
     </div>
   </section>
 
